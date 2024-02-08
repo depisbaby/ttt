@@ -1,28 +1,29 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Unity.Collections;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class Hud : MonoBehaviour
+public class Hud : NetworkBehaviour
 {
     public static Hud Instance;
     public void Awake()
     {
         Instance = this;
     }
-
-    [SerializeField]GameObject death;
+    [SerializeField] GameObject crossHair;
+    [SerializeField] GameObject death;
     [SerializeField] GameObject blueTeamWon;
     [SerializeField] GameObject redTeamWon;
     [SerializeField] GameObject gameOn;
+    [SerializeField] GameObject raiseWeaponIcon;
     [SerializeField] GameObject winner;
-    [SerializeField] GameObject thisyou;
     [SerializeField] Image flash;
     [SerializeField] Gradient flashGraient;
-    [SerializeField] TMPro.TMP_Text killFeed;
+    [SerializeField] TMPro.TMP_Text teamTMP;
 
-    float killFeedClear;
     float flashDuration;
 
     // Start is called before the first frame update
@@ -34,41 +35,32 @@ public class Hud : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if(killFeedClear > 0f)
-        {
-            killFeedClear -= Time.deltaTime;
-            killFeed.gameObject.SetActive(true);
-        }
-        else if(killFeedClear < 0f)
-        {
-            killFeed.text = "";
-            killFeedClear = 0f;
-        }
-        else
-        {
-            killFeed.gameObject.SetActive(false);
-        }
-
         if(flashDuration > 0.01f)
         {
             flash.color = flashGraient.Evaluate(flashDuration);
             flash.gameObject.SetActive(true);
-            thisyou.SetActive(true);
+            
             flashDuration -= Time.deltaTime * 0.5f;
         }
         else
         {
             flash.gameObject.SetActive(false);
-            thisyou.gameObject.SetActive(false);
+            
         }
     }
 
-    public void KillFeed(string killer, string killed, string killerColor, string killedColor)
+    public void ShowRaiseWeapon()
     {
-        //
-        killFeed.text = $"<color={killerColor}>{killer}</color> killed <color={killedColor}>{killed}</color> \n" + killFeed.text;
-        
-        killFeedClear = 5f;
+        raiseWeaponIcon.SetActive(true);
+
+        crossHair.SetActive(false);
+    }
+
+    public void ShowNoIcon()
+    {
+        raiseWeaponIcon.SetActive(false);
+
+        crossHair.SetActive(true);
     }
 
     public void ShowGameOn()
@@ -111,12 +103,31 @@ public class Hud : MonoBehaviour
         Invoke("ShowRedTeamWon", 5f);
     }
 
+    [ClientRpc]public void SetTeamClientRpc(ulong clientId, bool blue, FixedString128Bytes ftCode)
+    {
+        if (NetworkManager.Singleton.LocalClientId != clientId) return; 
+
+        if (blue)
+        {
+            teamTMP.text = "You are <color=blue>a human</color>.";
+
+            if (ftCode != "")
+            {
+                teamTMP.text += "\nYou also know that the correct FT-Code is: " + ftCode;
+            }
+        }
+        else
+        {
+            teamTMP.text = "You are <color=red>a mimic</color>.";
+        }
+    }
+
     public void ShowDeath(bool show)
     {
         death.SetActive(show);
     }
 
-    public async void Flash()
+    public void Flash()
     {
         flashDuration = 1f;
 

@@ -39,6 +39,7 @@ public class SessionManager : MonoBehaviour
     private void Start()
     {
         Physics.IgnoreLayerCollision(0, 7);
+        Physics.IgnoreLayerCollision(0, 9);
     }
 
     public async void AttemptJoining(string joinCode)

@@ -4,9 +4,10 @@ using System.Threading.Tasks;
 using Unity.Netcode;
 using UnityEngine;
 
-public class Gun : MonoBehaviour
+public class Gun : Item
 {
     // Start is called before the first frame update
+    [Header("Gun")]
     public int cyclingRate;
     public int ammoRemaining;
     bool cycling;
@@ -15,6 +16,8 @@ public class Gun : MonoBehaviour
     public LayerMask hittable;
     public int damage;
     public AnimationCurve climbX;
+    public float randomDivergence;
+    public float raisingSpeed;
 
     float recoil;
     float sprayModifier;
@@ -32,13 +35,14 @@ public class Gun : MonoBehaviour
         if (ammoRemaining == 0) return;
 
         ViewModelManager.Instance.PlayShootAnimation(recoilAmount, recoilRecovery);
-        player.PlayAudio(0, 0.3f);
-        player.PlayAudioClipServerRpc(0, 0.3f);
+        player.PlayAudio(1, 0, 0.3f);
+        player.PlayAudioClipServerRpc(1,0, 0.3f);
 
         cycling = true;
 
+        Vector3 recoiledDirection = GetRecoil(cameraTransform);
         RaycastHit hit;
-        if(Physics.Raycast(cameraTransform.position, GetRecoil(cameraTransform), out hit,Mathf.Infinity,hittable))
+        if(Physics.Raycast(cameraTransform.position, recoiledDirection, out hit,Mathf.Infinity,hittable))
         {
             player.CastTrace(muzzlePosition, hit.point);
             player.CastTraceServerRpc(muzzlePosition, hit.point);
@@ -49,6 +53,7 @@ public class Gun : MonoBehaviour
             }
             
         }
+        cameraTransform.rotation = cameraTransform.rotation * Quaternion.Euler(-recoil, 0 ,0);
         recoil += recoilAmount;
         sprayModifier = 0f;
 
@@ -57,7 +62,12 @@ public class Gun : MonoBehaviour
 
     Vector3 GetRecoil(Transform cameraTransform)
     {
-        return (cameraTransform.right * climbX.Evaluate(recoil*0.5f) + cameraTransform.up * (recoil * 0.3f) + cameraTransform.forward);
+        Vector3 _randomDivergence = new Vector3(UnityEngine.Random.Range(-randomDivergence, randomDivergence), UnityEngine.Random.Range(-randomDivergence, randomDivergence), UnityEngine.Random.Range(-randomDivergence, randomDivergence));
+        
+        float velocityModifier = Mathf.Clamp(Player.localPlayer.rb.velocity.magnitude,0, 5f) * 0.01f;
+        Vector3 runningInaccuracy = new Vector3(UnityEngine.Random.Range(-velocityModifier, velocityModifier), UnityEngine.Random.Range(-velocityModifier, velocityModifier), UnityEngine.Random.Range(-velocityModifier, velocityModifier));
+
+        return (cameraTransform.right * climbX.Evaluate(recoil * 0.5f) + cameraTransform.forward) + _randomDivergence + runningInaccuracy;
     }
 
     public void SetSway(float _sway)
@@ -69,6 +79,11 @@ public class Gun : MonoBehaviour
     {
         await Task.Delay(cyclingRate);
         cycling = false;
+    }
+
+    public override void Equip()
+    {
+        Player.localPlayer.SetEquippedGun(this);
     }
 
 }

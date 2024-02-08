@@ -30,16 +30,16 @@ public class PlayerCam : MonoBehaviour
     void Update()
     {
         if (orientation == null) return;
+        if (MenuManager.Instance.actionBlockingWindowOpen) return;
 
-        float mouseX = Input.GetAxisRaw("Mouse X") * Time.deltaTime * sensX * 1000;
-        float mouseY = Input.GetAxisRaw("Mouse Y") * Time.deltaTime * sensY * 1000;
+        float mouseX = Input.GetAxis("Mouse X") * Time.deltaTime * sensX * 1000;
+        float mouseY = Input.GetAxis("Mouse Y") * Time.deltaTime * sensY * 1000;
 
-        yRotation += mouseX;
-        xRotation -= mouseY;
-        xRotation = Mathf.Clamp(xRotation, -90f, 90f);
+        //Recoil is added in Gun.cs!!!!!!!!!!!!!!!!!!
 
-        transform.rotation = Quaternion.Euler(xRotation, yRotation, 0);
-        orientation.rotation = Quaternion.Euler(0, yRotation, 0);
+        transform.rotation = transform.rotation * Quaternion.Euler(-mouseY, 0, 0);
+        moveCamera.transform.rotation = moveCamera.transform.rotation * Quaternion.Euler(0, mouseX, 0);
+        orientation.rotation = moveCamera.transform.rotation;
     }
 
     public void BindToPlayer(Player player)
@@ -48,4 +48,6 @@ public class PlayerCam : MonoBehaviour
         moveCamera.cameraPosition = player.headTransform;
         orientation = player.orientation;
     }
+
+    
 }

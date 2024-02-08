@@ -11,32 +11,42 @@ using UnityEngine.UIElements;
 
 public class Player : NetworkBehaviour
 {
+    public static Player localPlayer;
+    public enum Team
+    {
+        Blue = 1,
+        Red = 2,
+    }
 
-    public NetworkVariable<FixedString128Bytes> username = new NetworkVariable<FixedString128Bytes>("",
-        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
-    public NetworkVariable<int> health = new NetworkVariable<int>(100,
-        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    public NetworkVariable<Quaternion> networkOriention = new NetworkVariable<Quaternion>(default,
-        NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    public NetworkVariable<FixedString128Bytes> username = new NetworkVariable<FixedString128Bytes>("",NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    public NetworkVariable<int> health = new NetworkVariable<int>(100,NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<Quaternion> networkOriention = new NetworkVariable<Quaternion>(default,NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    public NetworkVariable<bool> walking = new NetworkVariable<bool>(default,NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+    [HideInInspector] public Team team;
+    [HideInInspector] public Transform cameraTransform;
+
+    [Header("PII")]
     public Transform headTransform;
-    public Transform cameraTransform;
     public GameObject visuals;
     public GameObject playerCollider;
     public PlayerVisuals playerVisuals;
     public GameObject flashBangPrefab;
-    public AudioSource audioSource;
+    public AudioSource[] audioSources;
     public AudioClip[] audioClips;
     public LineRenderer lineRenderer;
     public GameObject bodyPrefab;
+    public LayerMask interactMask;
+    //
 
     //local
-    [SerializeField]Gun gun;
+    public Gun gun;
 
     float flashAmount;
-
     bool frozen;
     float walkingTick;
+    float weaponRaisedTick;
+    bool weaponRaised;
 
     private async void Start()
     {
@@ -52,10 +62,11 @@ public class Player : NetworkBehaviour
             readyToJump = true;
             #endregion
 
+            localPlayer = this;
             PlayerCam.Instance.BindToPlayer(this);
             SessionManager.Instance.playerPrefabDone = true;
             username.Value = SessionManager.Instance.localUsername;
-            
+            playerVisuals.HideForOwner();
         }
 
         //On server
@@ -78,52 +89,28 @@ public class Player : NetworkBehaviour
 
     private void Update()
     {
-        playerVisuals.transform.rotation = networkOriention.Value;
+
+        AllUpdate_FootSteps();
+        playerVisuals.SetWalking(walking.Value);
 
         if (!IsOwner) return;
 
         if (frozen) return;
 
-        networkOriention.Value = orientation.rotation;
+        if (MenuManager.Instance.actionBlockingWindowOpen) return;
 
-        if (Input.GetButton("Fire1"))
-        {
-            if(gun != null)
-            {
-                gun.Shoot(cameraTransform, ViewModelManager.Instance.muzzle.position, this);
-            }
-        }
+        playerVisuals.orientation.Value = orientation.rotation;
+        playerVisuals.cameraRotation.Value = cameraTransform.rotation;
 
-        if (Input.GetButtonDown("ThrowUtil"))
-        {
-            if (flashAmount == 0) return;
+        MyInput();
 
-            PlayAudio(2, 0.5f);
-            flashAmount -= 1;
-            ThrowFlashServerRpc(cameraTransform.position, cameraTransform.forward);
-        }
-
-        if(walkingTick > 0)
-        {
-            walkingTick -= Time.deltaTime;
-        }
-        else
-        {
-            if((horizontalInput != 0 || verticalInput != 0) && !Input.GetButton("Fire1") && grounded)
-            {
-                PlayAudio(3, 0.1f);
-                PlayAudioClipServerRpc(3, 0.1f);
-            }
-            walkingTick = 0.40f;
-        }
-
-        
+        Combat();
+        Interact();
 
         #region Move
         // ground check
         grounded = Physics.Raycast(transform.position + new Vector3(0f,0.2f,0f), Vector3.down, 0.5f, whatIsGround);
 
-        MyInput();
         SpeedControl();
 
         // handle drag
@@ -137,13 +124,95 @@ public class Player : NetworkBehaviour
     private void FixedUpdate()
     {
         if (!IsOwner) return;
+
+        if (MenuManager.Instance.actionBlockingWindowOpen) return;
         MovePlayer();
     }
 
+    #region User Inputs
+
+    void Combat()
+    {
+        if (Input.GetButtonDown("ThrowUtil"))
+        {
+            if (flashAmount == 0) return;
+
+            flashAmount -= 1;
+            ThrowFlashServerRpc(cameraTransform.position, cameraTransform.forward);
+        }
+
+        if (gun == null) return;
+
+        ViewModelManager.Instance.HideViewModel(true);
+
+        if (Input.GetButton("Fire2"))
+        {
+            weaponRaisedTick = Mathf.Clamp(weaponRaisedTick + Time.deltaTime * gun.raisingSpeed, 0f, 1f);
+
+            if (weaponRaisedTick >= 1f) {
+                ViewModelManager.Instance.HideViewModel(false);
+            }
+
+            if(weaponRaisedTick > 0f && weaponRaisedTick < 1f)
+            {
+                Hud.Instance.ShowRaiseWeapon();
+            }
+            else
+            {
+                Hud.Instance.ShowNoIcon();
+            }
+
+            if (weaponRaised == false)
+            {
+                weaponRaised = true;
+                playerVisuals.ChangeAppearanceServerRpc("A_" + gun.itemName);
+            }
+
+        }
+        else
+        {
+            if (weaponRaised == true)
+            {
+                weaponRaised = false;
+                playerVisuals.ChangeAppearanceServerRpc("default");
+            }
+
+            Hud.Instance.ShowNoIcon();
+            weaponRaisedTick = 0f;
+        }
+
+        if (Input.GetButton("Fire1") && weaponRaisedTick >= 1f)
+        {
+            gun.Shoot(cameraTransform, ViewModelManager.Instance.GetMuzzleTransform().position, this);
+            
+        }
+
+    }
+
+    void Interact()
+    {
+        if (Input.GetButtonDown("Interact"))
+        {
+            RaycastHit hit;
+            if(Physics.Raycast(cameraTransform.position, cameraTransform.forward, out hit, 2f, interactMask))
+            {
+                IInteractable i = hit.collider.transform.parent.gameObject.GetComponent<IInteractable>();
+                if (i != null)
+                {
+                    //Debug.Log("gujisdfgiu");
+                    i.Interact();
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region Teleportation
     [ClientRpc] public void TeleportAndFreezeClientRpc(Vector3 position)
     {
         if (!IsOwner) return;
-        Debug.Log(position);
+        ///Debug.Log(position);
 
         VoikkoNytVittuToimia(position);
         
@@ -161,20 +230,29 @@ public class Player : NetworkBehaviour
                 return;
             }
 
-            Debug.Log("Ei toimi");
+            //Debug.Log("Ei toimi");
             transform.position = position;
         }
     }
+    #endregion
 
+    #region Freeze
     [ClientRpc]
-    public void UnfreezeClientRpc()
+    public void FreezeClientRpc(bool freeze)
     {
-        frozen = false;
+        frozen = freeze;
         
     }
+    #endregion
 
+    #region Hit reg
     [ServerRpc(RequireOwnership = false)] public void SendHitServerRpc(int damage, ulong shooterId)
     {
+        if (LobbyMenu.Instance.playersDict[shooterId].health.Value < 1)
+        {
+            return;
+        }
+
         if(health.Value - damage < 0)
         {
             MatchManager.Instance.PlayerKilled(this, LobbyMenu.Instance.playersDict[shooterId]);
@@ -183,7 +261,9 @@ public class Player : NetworkBehaviour
 
         health.Value -= damage;
     }
+    #endregion
 
+    #region Kill/Revive
     [ClientRpc] public void KillClientRpc()
     {
         if(frozen) return;
@@ -192,9 +272,9 @@ public class Player : NetworkBehaviour
         {
             rb.useGravity = false;
             Hud.Instance.ShowDeath(true);
-            playerVisuals.Kill(rb.velocity);
             ViewModelManager.Instance.HideViewModel(true);
             SpawnBodyServerRpc(rb.velocity, orientation.rotation);
+            InventoryMenu.Instance.UpdateInventory();
         }
 
         frozen = true;
@@ -209,7 +289,6 @@ public class Player : NetworkBehaviour
         {
             rb.useGravity = true;
             Hud.Instance.ShowDeath(false);
-            playerVisuals.Revive();
             ViewModelManager.Instance.HideViewModel(false);
 
             playerVisuals.HideForOwner();
@@ -220,7 +299,9 @@ public class Player : NetworkBehaviour
         visuals.SetActive(true);
         playerCollider.SetActive(true);
     }
+    #endregion
 
+    #region Flashing
     [ClientRpc] public void FlashPlayerClientRpc()
     {
         if(!IsOwner)
@@ -228,7 +309,6 @@ public class Player : NetworkBehaviour
             return;
         }
 
-        PlayAudio(1, 0.5f);
         Hud.Instance.Flash();
     }
 
@@ -246,28 +326,46 @@ public class Player : NetworkBehaviour
         flash.Throw(position, direction);
 
     }
+    #endregion
 
-    [ServerRpc] public void PlayAudioClipServerRpc(int id, float volume)
+    #region Audio Sources
+    [ServerRpc] public void PlayAudioClipServerRpc(ushort sourceId, ushort clipId, float volume)
     {
-        PlayAudioClipClientRpc(id, volume);
+        PlayAudioClipClientRpc(sourceId, clipId, volume);
     }
 
-    [ClientRpc] public void PlayAudioClipClientRpc(int id, float volume)
+    [ClientRpc] public void PlayAudioClipClientRpc(ushort sourceId, ushort clipId, float volume)
     {
         if (IsOwner) return;
 
-        PlayAudio(id, volume);
+        PlayAudio(sourceId, clipId, volume);
     }
     //
-    public void PlayAudio(int id, float volume)
+    public void PlayAudio(ushort sourceId, ushort clipId, float volume)
     {
+        if(sourceId == 0) return;
 
-        audioSource.Stop();
-        audioSource.volume = volume;
-        audioSource.clip = audioClips[id];
-        audioSource.Play();
+        audioSources[sourceId].Stop();
+        audioSources[sourceId].volume = volume;
+        audioSources[sourceId].clip = audioClips[clipId];
+        audioSources[sourceId].Play();
     }
 
+    void AllUpdate_FootSteps()
+    {
+        if (walking.Value)
+        {
+            audioSources[0].volume = 0.3f;
+        }
+        else
+        {
+            audioSources[0].volume = 0f;
+        }
+    }
+
+    #endregion
+
+    #region Bullet traces
     [ServerRpc] public void CastTraceServerRpc(Vector3 start, Vector3 end)
     {
         CastTraceClientRpc(start, end);
@@ -288,7 +386,9 @@ public class Player : NetworkBehaviour
 
         lineRenderer.enabled = false;
     }
+    #endregion
 
+    #region Spawn dead body
     [ServerRpc]public void SpawnBodyServerRpc(Vector3 direction, Quaternion rotation)
     {
         GameObject go = Instantiate(bodyPrefab);
@@ -304,7 +404,16 @@ public class Player : NetworkBehaviour
         DespawnObject(go, 10 * 1000);
 
     }
+    #endregion
 
+    #region Equip gun
+    public void SetEquippedGun(Gun _gun)
+    {
+        gun = _gun;
+    }
+    #endregion
+
+    #region Util
     async void DespawnObject(GameObject go, int delay)
     {
         await Task.Delay((int)delay);
@@ -313,17 +422,7 @@ public class Player : NetworkBehaviour
         Destroy(go);
     }
 
-    [ClientRpc]public void SetColorClientRpc(bool blue)
-    {
-        if(blue)
-        {
-            playerVisuals.SetTeamColot(Color.blue);
-        }
-        else
-        {
-            playerVisuals.SetTeamColot(Color.red);
-        }
-    }
+    #endregion
 
     #region Movement
     [Header("Movement")]
@@ -354,7 +453,7 @@ public class Player : NetworkBehaviour
 
     Vector3 moveDirection;
 
-    Rigidbody rb;
+    public Rigidbody rb;
 
     private void MyInput()
     {
@@ -363,12 +462,11 @@ public class Player : NetworkBehaviour
 
         if(horizontalInput != 0 || verticalInput != 0)
         {
-            SetWalkingServerRpc(true);
-            
+            walking.Value = true;
         }
         else
         {
-            SetWalkingServerRpc(false);
+            walking.Value= false;
         }
 
         // when to jump
@@ -384,6 +482,7 @@ public class Player : NetworkBehaviour
 
     private void MovePlayer()
     {
+
         // calculate movement direction
         moveDirection = orientation.forward * verticalInput + orientation.right * horizontalInput;
 
@@ -420,14 +519,5 @@ public class Player : NetworkBehaviour
         readyToJump = true;
     }
 
-    [ServerRpc] void SetWalkingServerRpc(bool walking)
-    {
-        SetWalkingClientRpc(walking);
-    }
-
-    [ClientRpc] void SetWalkingClientRpc(bool walking)
-    {
-        playerVisuals.SetWalking(walking);
-    }
     #endregion
 }

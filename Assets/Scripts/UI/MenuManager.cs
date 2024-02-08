@@ -15,6 +15,8 @@ public class MenuManager : MonoBehaviour
     [SerializeField] Canvas canvas;
     public List<MenuWindow> menus = new List<MenuWindow>();
 
+    public LobbyMenu lobbyMenu;
+
     /// <summary>
     /// Call this to open a menu of given name. The name is same as the name of GameObject, the MenuWindow is on.
     /// </summary>
@@ -33,6 +35,7 @@ public class MenuManager : MonoBehaviour
             }
 
             CheckForActionBlocking();
+            CheckForWindowsOpen();
             return;
         }
 
@@ -49,6 +52,7 @@ public class MenuManager : MonoBehaviour
         }
 
         CheckForActionBlocking();
+        CheckForWindowsOpen();
     }
 
     public void CloseWindow(string name)
@@ -62,6 +66,7 @@ public class MenuManager : MonoBehaviour
         }
 
         CheckForActionBlocking();
+        CheckForWindowsOpen();
     }
 
     /// <summary>
@@ -78,6 +83,7 @@ public class MenuManager : MonoBehaviour
         }
 
         CheckForActionBlocking();
+        CheckForWindowsOpen();
     }
 
     // Start is called before the first frame update
@@ -103,6 +109,36 @@ public class MenuManager : MonoBehaviour
         foreach (var item in menus)
         {
             if (item.actionBlocking == true && item.GetWindowActive() == true) actionBlockingWindowOpen = true;
+        }
+    }
+
+    void CheckForWindowsOpen()
+    {
+        if (lobbyMenu.window.activeSelf)
+        {
+            Cursor.lockState = CursorLockMode.Confined;
+            Cursor.visible = true;
+            return;
+        }
+
+        bool open = false;
+        foreach (var item in menus)
+        {
+            if (item.GetWindowActive() == true)
+            {
+                open = true;
+            }
+        }
+
+        if (open)
+        {
+            Cursor.lockState = CursorLockMode.Confined;
+            Cursor.visible = true;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
     }
 

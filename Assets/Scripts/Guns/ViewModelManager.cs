@@ -8,10 +8,11 @@ public class ViewModelManager : MonoBehaviour
 {
     public static ViewModelManager Instance;
 
-    public Transform muzzle;
+    public Transform defaultMuzzle;
 
     [SerializeField] float recoilModifier;
-    [SerializeField]GameObject viewModelHolder;
+    ViewModel activeViewModel;
+    [SerializeField]List<ViewModel> viewModels = new List<ViewModel>();
     float recoilRecovery;
     [SerializeField] GameObject muzzleFlash;
 
@@ -29,13 +30,61 @@ public class ViewModelManager : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        viewModelHolder.transform.localPosition = Vector3.Lerp(viewModelHolder.transform.localPosition, Vector3.zero, Time.deltaTime * recoilRecovery);
+        if(activeViewModel != null)
+        {
+            activeViewModel.transform.localPosition = Vector3.Lerp(activeViewModel.transform.localPosition, Vector3.zero, Time.deltaTime * recoilRecovery);
+        } 
+    }
+
+    public void SetViewModel(ViewModel target)
+    {
+        if(target == null)
+        {
+            if (activeViewModel != null)
+            {
+                activeViewModel.gameObject.SetActive(false);
+                activeViewModel = null;
+            }
+
+            return;
+        }
+
+        if (activeViewModel != null && activeViewModel.viewModelName == target.viewModelName) return;
+
+        ViewModel viewModel = null;
+
+        foreach (var item in viewModels)
+        {
+            if(item.viewModelName == target.viewModelName)
+            {
+                viewModel = item;
+            }
+        }
+
+        if(viewModel == null)
+        {
+            viewModel = Instantiate(target.gameObject).GetComponent<ViewModel>();
+            viewModel.transform.parent = transform.parent;
+            viewModel.transform.localPosition = Vector3.zero;
+            viewModel.transform.localRotation = Quaternion.identity;
+            viewModels.Add(viewModel);
+        }
+
+        if(activeViewModel != null)
+        {
+            activeViewModel.gameObject.SetActive(false);
+        }
+
+        activeViewModel = viewModel;
+        activeViewModel.gameObject.SetActive(true);
+
+
     }
 
     public async void PlayShootAnimation(float recoilAmount, float _recoilRecovery)
     {
         float _recoil = recoilAmount * recoilModifier;
-        viewModelHolder.transform.localPosition = new Vector3(0, (_recoil * 0.2f), -(_recoil));
+        activeViewModel.transform.localPosition = new Vector3(0, (_recoil * 0.2f), -(_recoil));
         recoilRecovery = _recoilRecovery;
 
         muzzleFlash.transform.localRotation = Quaternion.Euler(0,0, UnityEngine.Random.Range(0, 180));
@@ -48,6 +97,17 @@ public class ViewModelManager : MonoBehaviour
 
     public void HideViewModel(bool hide)
     {
-        viewModelHolder.SetActive(!hide);
+        if (activeViewModel == null) return; 
+        activeViewModel.gameObject.SetActive(!hide);
+    }
+
+    public Transform GetMuzzleTransform()
+    {
+        if(activeViewModel == null)
+        {
+            return defaultMuzzle;
+        }
+
+        return activeViewModel.muzzle;
     }
 }

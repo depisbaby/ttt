@@ -45,11 +45,13 @@ public class Console : MenuWindow
     public override void Open()
     {
         base.Open();
+        
         window.SetActive(true);
     }
     public override void Close()
     {
         base.Close();
+        
         window.SetActive(false);
     }
 
@@ -105,6 +107,14 @@ public class Console : MenuWindow
 
             case "getJoiningCode":
                 RelayScript.Instance.GetJoiningCode();
+                return;
+
+            case "em":
+                MatchManager.Instance.MatchEnd();
+                return;
+
+            case "SpawnItem":
+                ItemManager.Instance.SpawnNetworkItem(ItemManager.Instance.NameToItemId(current.Split(" ")[1]), 1 , "", Player.localPlayer.transform.position + Vector3.up, Vector3.zero);
                 return;
 
             default:

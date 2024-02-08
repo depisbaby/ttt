@@ -17,12 +17,9 @@ public class LobbyMenu : NetworkBehaviour
     public List<Player> players = new List<Player>();
     public List<Player> ready = new List<Player>();
 
-    public List<Player> redTeam = new List<Player>();
-    public List<Player> blueTeam = new List<Player>();
 
     [Header("UI Elements")]
-    public TMPro.TMP_Text blueTeamTMP;
-    public TMPro.TMP_Text redTeamTMP;
+    public TMPro.TMP_Text joinedTMP;
     public TMPro.TMP_Text readyButtonTMP;
 
     public GameObject window;
@@ -57,35 +54,16 @@ public class LobbyMenu : NetworkBehaviour
     }
     public void OnPlayerJoined(Player player)
     {
-        if(players.Count == 0 || players.Count % 2 == 0) //put on blue
-        {
-            blueTeam.Add(player);
-            player.SetColorClientRpc(true);
-        }
-        else //put on red
-        {
-            redTeam.Add(player);
-            player.SetColorClientRpc(false);
-        }
-        
+        player.FreezeClientRpc(true);
         players.Add(player);
         playersDict.Add(player.OwnerClientId, player);
-
 
         UpdateLobby();
     }
 
     public void OnPlayerLeft(Player player)
     {
-        if (redTeam.Contains(player)) // on red
-        {
-            redTeam.Remove(player);
-        }
-        else // on blue
-        {
-            blueTeam.Remove(player);
-        }
-
+        
         players.Remove(player);
         playersDict.Remove(player.OwnerClientId);
 
@@ -95,24 +73,17 @@ public class LobbyMenu : NetworkBehaviour
     public void UpdateLobby()
     {
         string s = "";
-        foreach (var item in blueTeam)
+        foreach (var item in players)
         {
             s = s + item.username.Value + "\n";
-            item.SetColorClientRpc(true);
+            
         }
-        blueTeamTMP.text = s;
-        UpdateLobbyUserClientRpc(true, s);
-        s = "";
-
-        foreach (var item in redTeam)
-        {
-            s = s + item.username.Value + "\n";
-            item.SetColorClientRpc(false);
-        }
-        redTeamTMP.text = s;
-        UpdateLobbyUserClientRpc(false, s);
+        joinedTMP.text = s;
+        UpdateLobbyUserClientRpc(s);
+        
     }
-    //
+
+    #region Server RPC
     [ServerRpc(RequireOwnership = false)] void PlayerReadyServerRpc(bool _ready, ulong clientID)
     {
         if (_ready)
@@ -134,17 +105,13 @@ public class LobbyMenu : NetworkBehaviour
             HideLobbyClientRpc(true);
         }
     }
+    #endregion
 
-    [ClientRpc] void UpdateLobbyUserClientRpc(bool blueTeam, string display)
+    #region Client RPC
+    [ClientRpc] void UpdateLobbyUserClientRpc(string display)
     {
-        if(blueTeam)
-        {
-            blueTeamTMP.text = display;
-        }
-        else
-        {
-            redTeamTMP.text = display;
-        }
+        joinedTMP.text = display;
+        
     }
 
     [ClientRpc]
@@ -154,4 +121,5 @@ public class LobbyMenu : NetworkBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
+    #endregion
 }
